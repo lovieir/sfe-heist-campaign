@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SFE Heist · Foundry National Bank</title>
+  <style>
+    html, body, canvas { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: #171918; }
+    canvas { display: block; outline: none; }
+    #reticle { position: fixed; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: 5px; height: 5px; border: 1px solid #f9eaca; border-radius: 50%; box-shadow: 0 0 3px #161a18;
+      opacity: .85; pointer-events: none; }
+    #mission-feed {
+      position: fixed; z-index: 6; top: 18px; left: 18px;
+      display: grid; gap: 8px; width: min(310px, 43vw); pointer-events: none;
+    }
+    #jonathan-panel {
+      padding: 11px 13px; border: 1px solid #d4c49c88; border-left: 3px solid #d1b372;
+      border-radius: 6px; background: #171b19f2; color: #fff9eb; box-shadow: 0 6px 18px #0008;
+      font: 14px/1.45 Arial, sans-serif;
+    }
+    #jonathan-name { display: block; margin-bottom: 3px; color: #ecd398; font-weight: 700; }
+    #jonathan-message { margin: 0; overflow-wrap: anywhere; }
+    #field-message {
+      padding: 9px 12px; border: 1px solid #9dbbad80; border-radius: 6px;
+      background: #15221df2; color: #e1f3e9; font: 14px/1.4 Arial, sans-serif;
+    }
+    #field-message:empty { display: none; }
+    #view-settings {
+      position: fixed; z-index: 7; top: 18px; right: 18px;
+      padding: 8px 12px; border: 1px solid #d4c49c88; border-radius: 5px;
+      background: #171b19ed; color: #fff4d7; font: 700 13px Arial, sans-serif; cursor: pointer;
+    }
+    body:has(#guard-alert.active, #camera-alert.active, #tripwire-alert.active, #vault-lock-alert.active) #view-settings { top: 226px; }
+    .game-overlay {
+      position: fixed; z-index: 12; inset: 0; display: grid; place-items: center; padding: 20px;
+      overflow: auto; box-sizing: border-box; background: #0c1213c9; color: #fff5dc;
+      font: 16px/1.5 Arial, sans-serif;
+    }
+    .game-overlay[hidden] { display: none; }
+    #level-menu { background: linear-gradient(105deg, #071511f5, #101914de 54%, #171a12aa); }
+    body.mission-select :is(#mission-feed, #hotbar, #reticle, #view-settings) { display: none; }
+    #level-menu .game-card { width: min(100%, 700px); }
+    #level-menu .menu-label, #market-subtitle { color: #d8bd81; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+    #level-menu nav { display: grid; gap: 10px; }
+    .mission-link {
+      display: grid; grid-template-columns: 40px 1fr; gap: 3px 8px; align-items: center;
+      color: #fff0d0; background: #22332a; border: 1px solid #a5885488; border-radius: 5px;
+      text-decoration: none; padding: 10px 12px;
+    }
+    .mission-link:hover, .mission-link:focus-visible { background: #344735; border-color: #eed392; }
+    .mission-link span:first-child { grid-row: 1 / span 2; color: #edce8b; font: 21px Georgia, serif; }
+    .mission-link small { color: #d7dbc9; }
+    .menu-back { color: #e6cb8f; }
+    #wallet { color: #b8e0ba; font: 700 13px/1.4 Arial, sans-serif; text-shadow: 0 2px 4px #000; }
+    #market-stock { display: grid; gap: 10px; margin: 14px 0; }
+    .stock-row { padding: 9px; background: #203129; border: 1px solid #8e774b; border-radius: 5px; }
+    .stock-row p { margin: 4px 0 8px; font-size: 13px; }
+    #bank-plan { width: 100%; height: auto; background: #0e1c16; border: 1px solid #8e774b; }
+    #floor-plan .game-card { width: min(100%, 590px); }
+    .game-card {
+      box-sizing: border-box; width: min(100%, 450px); padding: clamp(22px, 5vw, 40px);
+      border: 1px solid #caaf74; border-radius: 12px; background: #17221ff7;
+      box-shadow: 0 24px 100px #000a;
+    }
+    .game-card h1 { margin: 0 0 12px; color: #f5d994; font: 700 clamp(26px, 5vw, 42px)/1.12 Georgia, serif; }
+    .game-card label { display: block; margin: 16px 0; }
+    .game-card output { float: right; color: #e4c57e; }
+    .game-card input[type='range'] { display: block; width: 100%; margin: 8px 0 0; accent-color: #e4c57e; }
+    .game-card button { padding: 9px 16px; border: 1px solid #e8cc84; border-radius: 5px;
+      background: #e8cc84; color: #18211c; font-weight: 700; cursor: pointer; }
+    .game-card button.secondary { background: transparent; color: #fff4d7; }
+    #victory-screen { background: radial-gradient(ellipse at 50% 38%, #214943a8, #0b1014ed 70%); }
+    #victory-screen .game-card { position: relative; text-align: center; }
+    #victory-symbol { font-size: 56px; color: #7ce3dc; line-height: 1; margin-bottom: 16px; text-shadow: 0 0 32px #65ffe477; }
+    #victory-confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+    #victory-confetti i { position: absolute; top: -20px; width: 7px; height: 12px; opacity: 0;
+      background: #e8cc84; animation: celebrate 3.6s var(--delay) ease-in both; }
+    #victory-confetti i:nth-child(3n) { background: #70ded7; }
+    #victory-confetti i:nth-child(3n + 1) { background: #ffeed3; }
+    @keyframes celebrate { 12% { opacity: 1; } 90% { opacity: .9; } 100% { translate: 10vw 103vh; rotate: 360deg; opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { #victory-confetti { display: none; } }
+    #guard-alert {
+      position: fixed; z-index: 3; top: 18px; left: 50%; transform: translateX(-50%);
+      width: min(430px, 84vw); padding: 12px 16px; border: 1px solid #ff4651;
+      border-radius: 5px; background: #250d11eF; color: #ffe9e9;
+      font: 700 13px/1.4 Arial, sans-serif; text-align: center;
+      letter-spacing: .06em; opacity: 0; transition: opacity .12s linear; pointer-events: none;
+      box-shadow: 0 0 18px #ff1e3270;
+    }
+    #guard-alert.active { opacity: 1; }
+    #detection-track { height: 7px; margin-top: 8px; overflow: hidden; border-radius: 5px; background: #572127; }
+    #detection-progress { width: 0; height: 100%; background: #ff3546; transition: width .08s linear; }
+    #camera-alert {
+      position: fixed; z-index: 3; top: 82px; left: 50%; transform: translateX(-50%);
+      width: min(430px, 84vw); padding: 11px 16px; border: 1px solid #54aaff;
+      border-radius: 5px; background: #0a1e31eF; color: #d9efff;
+      font: 700 13px/1.4 Arial, sans-serif; text-align: center; letter-spacing: .06em;
+      opacity: 0; transition: opacity .12s linear; pointer-events: none; box-shadow: 0 0 18px #168cff70;
+    }
+    #camera-alert.active { opacity: 1; }
+    #camera-detection-track { height: 7px; margin-top: 8px; overflow: hidden; border-radius: 5px; background: #17314a; }
+    #camera-detection-progress { width: 0; height: 100%; background: #42b5ff; transition: width .08s linear; }
+    #mission-failure {
+      position: fixed; z-index: 4; inset: 0; display: grid; place-content: center;
+      background: #550b15b8; color: #fff; font: 800 clamp(24px, 5vw, 48px)/1.25 Arial, sans-serif;
+      letter-spacing: .09em; text-align: center; text-shadow: 0 3px 20px #000;
+      opacity: 0; pointer-events: none; transition: opacity .12s linear;
+    }
+    #mission-failure.active { opacity: 1; }
+    #mission-failure small { display: block; margin-top: 12px; font-size: 14px; letter-spacing: .04em; }
+    #tripwire-alert {
+      position: fixed; z-index: 5; top: 146px; left: 50%; transform: translateX(-50%);
+      padding: 11px 18px; border: 1px solid #ff3449; border-radius: 5px;
+      background: #28080def; color: #fff0f0; font: 800 16px/1.4 Arial, sans-serif;
+      letter-spacing: .06em; box-shadow: 0 0 20px #ff1e3270; opacity: 0;
+      pointer-events: none; transition: opacity .12s linear;
+    }
+    #tripwire-alert.active { opacity: 1; }
+    #vault-lock-alert {
+      position: fixed; z-index: 5; top: 146px; left: 50%; transform: translateX(-50%);
+      padding: 11px 18px; border: 1px solid #c9a958; border-radius: 5px;
+      background: #28200def; color: #fff2cf; font: 800 16px/1.4 Arial, sans-serif;
+      letter-spacing: .06em; box-shadow: 0 0 20px #d0a54770; opacity: 0;
+      pointer-events: none; transition: opacity .12s linear;
+    }
+    #vault-lock-alert.active { opacity: 1; }
+    #hotbar {
+      position: fixed; z-index: 6; left: 50%; bottom: 18px; transform: translateX(-50%);
+      display: flex; gap: 7px; padding: 8px; border: 1px solid #d4c49c88; border-radius: 8px;
+      background: #151918d9; box-shadow: 0 8px 24px #0008; font: 12px Arial, sans-serif;
+    }
+    .hotbar-slot {
+      position: relative; display: grid; place-items: center; width: 58px; height: 58px;
+      border: 1px solid #aaa28d88; border-radius: 5px; background: #303330b8; color: #eee8d8;
+      cursor: pointer;
+    }
+    .hotbar-slot.selected { border: 2px solid #e4c878; background: #494435d9; }
+    .hotbar-key { position: absolute; top: 4px; left: 6px; color: #ded4b9; font-weight: 700; }
+    .hotbar-icon { font-size: 27px; line-height: 1; }
+    .hotbar-name { position: absolute; bottom: 3px; left: 0; right: 0; overflow: hidden; font-size: 9px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    #pickup-prompt {
+      position: fixed; z-index: 6; left: 50%; bottom: 100px; transform: translateX(-50%);
+      padding: 8px 13px; border: 1px solid #d4c49c; border-radius: 4px;
+      background: #171b19e8; color: #fff4d5; font: 700 13px Arial, sans-serif;
+      letter-spacing: .05em; opacity: 0; pointer-events: none; transition: opacity .12s linear;
+    }
+    #pickup-prompt.active { opacity: 1; }
+    #escape-objective {
+      padding: 12px 15px; border: 1px solid #d4b55d; border-radius: 5px;
+      background: #171a18eF; color: #fff0c4; box-shadow: 0 6px 18px #0008;
+      font: 800 14px/1.45 Arial, sans-serif; letter-spacing: .04em;
+      display: none;
+    }
+    #escape-objective.active { display: block; }
+    @media (max-width: 1140px) {
+      #mission-feed { left: 12px; }
+      #guard-alert, #camera-alert, #tripwire-alert, #vault-lock-alert {
+        box-sizing: border-box; right: 12px; left: auto; transform: none;
+        width: max-content; max-width: min(462px, calc(57vw - 32px));
+      }
+    }
+    #tripwire-dialog {
+      position: fixed; z-index: 8; top: 50%; right: 24px; transform: translateY(-50%);
+      display: block; color: #eee5d2; font: 16px/1.5 Arial, sans-serif;
+    }
+    #tripwire-dialog[hidden] { display: none; }
+    .tripwire-card {
+      box-sizing: border-box; width: min(360px, 38vw); min-width: 280px; padding: 22px;
+      border: 1px solid #c2a66a; border-radius: 8px; background: #202321f2;
+      box-shadow: 0 12px 48px #000a;
+    }
+    .tripwire-card h2 { margin: 0 0 10px; color: #ead39e; font: 700 22px Georgia, serif; }
+    .tripwire-card p { min-height: 48px; }
+    .tripwire-card label { display: block; margin: 14px 0; }
+    .tripwire-card input {
+      display: block; box-sizing: border-box; width: 100%; margin-top: 7px; padding: 11px;
+      border: 1px solid #927b50; border-radius: 4px; background: #111614; color: white;
+      font: 700 22px monospace; letter-spacing: .24em;
+    }
+    .tripwire-actions { display: flex; gap: 10px; }
+    .tripwire-actions button {
+      flex: 1; padding: 11px; border: 1px solid #b79c64; border-radius: 4px;
+      background: #3a3a30; color: #fff4d7; font-weight: 700; cursor: pointer;
+    }
+    #tripwire-result { min-height: 22px; color: #ff8b8b; }
+    #vault-riddle-dialog {
+      position: fixed; z-index: 9; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: block; color: #eee5d2; font: 16px/1.5 Arial, sans-serif;
+    }
+    #vault-riddle-dialog[hidden] { display: none; }
+    #vault-riddle-result { min-height: 22px; color: #a8e8bb; }
+  </style>
+</head>
+<body>
+  <canvas aria-label="Foundry National Bank. Click to look around. WASD to walk, Space to jump, and E to interact." tabindex="0"></canvas>
+  <div id="reticle" aria-hidden="true"></div>
+  <div id="mission-feed">
+    <div id="jonathan-panel" role="status" aria-atomic="true">
+      <span id="jonathan-name">Jonathan</span>
+      <p id="jonathan-message"></p>
+    </div>
+    <div id="field-message" role="status"></div>
+    <div id="wallet" hidden></div>
+    <div id="escape-objective" role="status" aria-live="assertive" aria-hidden="true"></div>
+  </div>
+  <button id="view-settings" type="button" aria-haspopup="dialog">View settings · P</button>
+  <div id="pickup-prompt" role="status" aria-hidden="true">PRESS E TO PICK UP JEWEL</div>
+  <nav id="hotbar" aria-label="Hotbar">
+    <button type="button" class="hotbar-slot selected" data-hotbar-slot="0" aria-label="Hotbar slot 1, empty"><span class="hotbar-key">1</span><span class="hotbar-icon"></span><span class="hotbar-name">Empty</span></button>
+    <button type="button" class="hotbar-slot" data-hotbar-slot="1" aria-label="Hotbar slot 2, empty"><span class="hotbar-key">2</span><span class="hotbar-icon"></span><span class="hotbar-name">Empty</span></button>
+    <button type="button" class="hotbar-slot" data-hotbar-slot="2" aria-label="Hotbar slot 3, empty"><span class="hotbar-key">3</span><span class="hotbar-icon"></span><span class="hotbar-name">Empty</span></button>
+    <button type="button" class="hotbar-slot" data-hotbar-slot="3" aria-label="Hotbar slot 4, empty"><span class="hotbar-key">4</span><span class="hotbar-icon"></span><span class="hotbar-name">Empty</span></button>
+    <button type="button" class="hotbar-slot" data-hotbar-slot="4" aria-label="Hotbar slot 5, empty"><span class="hotbar-key">5</span><span class="hotbar-icon"></span><span class="hotbar-name">Empty</span></button>
+  </nav>
+  <div id="guard-alert" role="status" aria-live="assertive" aria-hidden="true">
+    <span id="guard-alert-text">GUARD SPOTTING</span>
+    <span id="guard-alert-time"></span>
+    <div id="detection-track"><div id="detection-progress"></div></div>
+  </div>
+  <div id="camera-alert" role="status" aria-live="assertive" aria-hidden="true">
+    SECURITY CAMERA DETECTING · <span id="camera-alert-time"></span>
+    <div id="camera-detection-track"><div id="camera-detection-progress"></div></div>
+  </div>
+  <div id="mission-failure" role="alert" aria-live="assertive" aria-hidden="true">
+    MISSION FAILED
+    <small>Security detected you. Returning to the entrance.</small>
+  </div>
+  <div id="tripwire-alert" role="alert" aria-live="assertive" aria-hidden="true">TRIPWIRE ACTIVE · <span id="tripwire-time">60s</span> TO ENTER OVERRIDE CODE</div>
+  <div id="vault-lock-alert" role="status" aria-live="assertive" aria-hidden="true">VAULT LOCKS IN · <span id="vault-lock-time">3.0s</span></div>
+  <section id="tripwire-dialog" role="dialog" aria-modal="true" aria-labelledby="tripwire-dialog-title" hidden>
+    <div class="tripwire-card">
+      <h2 id="tripwire-dialog-title">Vault security</h2>
+      <p id="tripwire-dialog-text"></p>
+      <form id="tripwire-code-form" hidden>
+        <label for="tripwire-code">Override code</label>
+        <input id="tripwire-code" type="text" autocomplete="off" maxlength="24" spellcheck="false" aria-label="Override code" autocapitalize="off">
+        <p id="tripwire-result" aria-live="polite"></p>
+        <div class="tripwire-actions"><button type="submit">Disable tripwire</button></div>
+      </form>
+      <div class="tripwire-actions"><button id="tripwire-close" type="button">Close</button></div>
+    </div>
+  </section>
+  <section id="settings-screen" class="game-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <div class="game-card">
+      <h1 id="settings-title">View settings</h1>
+      <label for="sensitivity">Mouse sensitivity <output id="sensitivity-value" for="sensitivity"></output>
+        <input type="range" id="sensitivity" min="20" max="200" step="5" value="70">
+      </label>
+      <label for="field-of-view">Field of view <output id="field-of-view-value" for="field-of-view"></output>
+        <input type="range" id="field-of-view" min="60" max="100" step="1" value="76">
+      </label>
+      <button id="resume-game" type="button">Resume</button>
+      <button id="reset-view" type="button" class="secondary">Reset defaults</button>
+      <p><a href="/" class="menu-back">Mission menu</a></p>
+    </div>
+  </section>
+  <section id="victory-screen" class="game-overlay" role="dialog" aria-modal="true" aria-labelledby="victory-title" hidden>
+    <div id="victory-confetti" aria-hidden="true"></div>
+    <div class="game-card">
+      <div id="victory-symbol" aria-hidden="true">◆</div>
+      <h1 id="victory-title">Heist complete</h1>
+      <p id="victory-result">You escaped Foundry National Bank with the East Reserve jewel.</p>
+      <p id="victory-time"></p>
+      <button id="play-again" type="button">Play again</button>
+      <p><a href="/" class="menu-back">Mission menu</a></p>
+    </div>
+  </section>
+  <section id="level-menu" class="game-overlay" aria-labelledby="menu-title" hidden>
+    <div class="game-card">
+      <div class="menu-label">Foundry National Bank</div>
+      <h1 id="menu-title">Choose a heist</h1>
+      <nav aria-label="Missions">
+        <a class="mission-link" href="?level=1"><span>01</span><strong>First Break-In</strong><small>Dodge a patrol and a camera, steal a file, and extract.</small></a>
+        <a class="mission-link" href="?level=2"><span>02</span><strong>Tools of the Trade</strong><small>Practice with spray paint and the ceramic blade.</small></a>
+        <a class="mission-link" href="?level=3"><span>03</span><strong>East Reserve</strong><small>Full challenge · Quests, shops, bank vault, and escape.</small></a>
+      </nav>
+    </div>
+  </section>
+  <section id="market-screen" class="game-overlay" role="dialog" aria-modal="true" aria-labelledby="market-title" hidden>
+    <div class="game-card">
+      <div id="market-subtitle">In-bank supplies</div><h1 id="market-title">Shop</h1>
+      <div id="market-cash"></div><div id="market-stock"></div>
+      <p id="market-result" role="status"></p><button id="close-market" type="button">Back to game</button>
+    </div>
+  </section>
+  <section id="floor-plan" class="game-overlay" role="dialog" aria-modal="true" aria-labelledby="plan-title" hidden>
+    <div class="game-card">
+      <h1 id="plan-title">Bank floor plan</h1>
+      <label for="plan-floor">Floor <select id="plan-floor"><option>B1</option><option>L1</option><option>L2</option></select></label>
+      <svg id="bank-plan" role="img" aria-label="Floor plan showing rooms and the player’s position" viewBox="-28 -21 56 42"></svg>
+      <p>Gold dot · you are here. North is toward the rear of the bank.</p><button id="close-plan" type="button">Back to game</button>
+    </div>
+  </section>
+  <section id="vault-riddle-dialog" role="dialog" aria-modal="true" aria-labelledby="vault-riddle-title" hidden>
+    <div class="tripwire-card">
+      <h2 id="vault-riddle-title">Vault riddle</h2>
+      <p id="vault-riddle-question"></p>
+      <form id="vault-riddle-form">
+        <label for="vault-riddle-answer">Your answer</label>
+        <input id="vault-riddle-answer" type="text" autocomplete="off" maxlength="32" spellcheck="false">
+        <p id="vault-riddle-result" aria-live="polite"></p>
+        <div class="tripwire-actions"><button type="submit">Submit answer</button></div>
+      </form>
+      <div class="tripwire-actions"><button id="vault-riddle-close" type="button">Close</button></div>
+      <p>Press <strong>E</strong> near the treasure to try again.</p>
+    </div>
+  </section>
+  <script type="module" src="./walkthrough.js"></script>
+</body>
+</html>
